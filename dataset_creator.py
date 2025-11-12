@@ -1,11 +1,13 @@
+import streamlit as st
 import cv2
-import sqlite3
+import numpy as np
 import os
+import sqlite3
+from PIL import Image
+import random
 
-# ---------- DATABASE FUNCTIONS ----------
-
+# ---------- DATABASE ----------
 def create_table():
-    """Ensure the STUDENTS table exists."""
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     cursor.execute("""
@@ -14,109 +16,78 @@ def create_table():
             Name TEXT NOT NULL,
             Age INTEGER NOT NULL,
             MatricNo TEXT NOT NULL
-        );
+        )
     """)
     conn.commit()
     conn.close()
 
 
 def insert_or_update(Id, Name, Age, MatricNo):
-    """Insert or update a student's record."""
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM STUDENTS WHERE Id = ?", (Id,))
+    cursor.execute("SELECT * FROM STUDENTS WHERE Id=?", (Id,))
     data = cursor.fetchone()
 
     if data:
-        cursor.execute("""
-            UPDATE STUDENTS SET Name=?, Age=?, MatricNo=? WHERE Id=?
-        """, (Name, Age, MatricNo, Id))
-        print(f"🔁 Updated record for ID {Id}")
+        cursor.execute("UPDATE STUDENTS SET Name=?, Age=?, MatricNo=? WHERE Id=?",
+                       (Name, Age, MatricNo, Id))
+        st.info(f"🔁 Updated record for ID {Id}")
     else:
-        cursor.execute("""
-            INSERT INTO STUDENTS (Id, Name, Age, MatricNo)
-            VALUES (?, ?, ?, ?)
-        """, (Id, Name, Age, MatricNo))
-        print(f"✅ Inserted new record for ID {Id}")
+        cursor.execute("INSERT INTO STUDENTS (Id, Name, Age, MatricNo) VALUES (?, ?, ?, ?)",
+                       (Id, Name, Age, MatricNo))
+        st.success(f"✅ New record created for ID {Id}")
 
     conn.commit()
     conn.close()
 
 
-# ---------- FACE CAPTURE FUNCTION ----------
+# ---------- FACE CAPTURE ----------
+def save_face_samples(Id, img_file, num_samples=90):
+    os.makedirs("dataset", exist_ok=True)
+    image = Image.open(img_file)
+    gray = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2GRAY)
 
-def capture_faces(Id, name, age, matric):
-    """Open camera, detect face, draw rectangle, and save samples."""
-    # Initialize camera
-    cam = cv2.VideoCapture(0)
-    if not cam.isOpened():
-        print("❌ Cannot open camera")
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+    if len(faces) == 0:
+        st.warning("⚠️ No face detected. Try again.")
         return
 
-    # Load face detector
-    faceDetect = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-    os.makedirs("dataset", exist_ok=True)
+    (x, y, w, h) = faces[0]  # Only the first detected face
+    face_crop = gray[y:y + h, x:x + w]
 
-    sampleNum = 0
-    print("\n📸 Starting face capture... Look at the camera. Press 'q' to quit.\n")
+    for i in range(num_samples):
+        # Apply random shifts and augmentations for diversity
+        dx, dy = random.randint(-4, 4), random.randint(-4, 4)
+        cropped = gray[max(0, y+dy):y+h, max(0, x+dx):x+w]
+        resized = cv2.resize(cropped, (200, 200))
 
-    # Create and name the window so it shows properly
-    cv2.namedWindow("Face Capture", cv2.WINDOW_NORMAL)
+        filename = f"dataset/user.{Id}.{i+1}.jpg"
+        cv2.imwrite(filename, resized)
 
-    while True:
-        ret, img = cam.read()
-        if not ret:
-            print("❌ Failed to grab frame")
-            break
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = faceDetect.detectMultiScale(gray, 1.3, 5)
-
-        for (x, y, w, h) in faces:
-            sampleNum += 1
-            # Save cropped grayscale face
-            cv2.imwrite(f"dataset/user.{Id}.{sampleNum}.jpg", gray[y:y+h, x:x+w])
-
-            # Draw green rectangle around face
-            cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)
-
-            # Pause slightly between captures
-            cv2.waitKey(100)
-
-        # Show the camera feed with rectangles
-        cv2.imshow("Face Capture", img)
-
-        # Keep window responsive
-        if cv2.getWindowProperty("Face Capture", cv2.WND_PROP_VISIBLE) < 1:
-            break
-
-        # Stop if 'q' is pressed or enough samples collected
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            print("👋 Exiting face capture...")
-            break
-        if sampleNum >= 90:
-            print(f"✅ Collected 90 samples for ID {Id}")
-            break
-
-    # Release resources
-    cam.release()
-    cv2.destroyAllWindows()
-    print("📦 Face samples saved successfully!")
+    st.success(f"✅ Saved {num_samples} face samples for ID {Id}!")
 
 
-# ---------- MAIN PROGRAM ----------
+# ---------- STREAMLIT APP ----------
+st.title("📸 Face Registration System")
+st.write("Capture and register your face directly from your browser (90 samples per user).")
 
-def main():
-    create_table()
+create_table()
 
-    Id = int(input('Enter User ID: '))
-    Name = input('Enter User Name: ')
-    Age = int(input('Enter User Age: '))
-    MatricNo = input('Enter Matriculation Number (e.g., 2021/246553): ')
+Id = st.number_input("Enter User ID", min_value=1, step=1)
+Name = st.text_input("Enter Name")
+Age = st.number_input("Enter Age", min_value=1, step=1)
+MatricNo = st.text_input("Enter Matriculation Number (e.g. 2021/246553)")
 
+if Name and MatricNo:
     insert_or_update(Id, Name, Age, MatricNo)
-    capture_faces(Id, Name, Age, MatricNo)
+    st.info("Click below to take a photo and generate 90 face samples.")
 
+    img_file = st.camera_input("📷 Capture your face")
 
-if __name__ == "__main__":
-    main()
+    if img_file is not None:
+        with st.spinner("Processing and saving 90 samples..."):
+            save_face_samples(Id, img_file, num_samples=90)
+else:
+    st.warning("Please fill all fields before capturing your face.")
