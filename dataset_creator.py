@@ -48,26 +48,27 @@ def save_face_samples(Id, img_file, num_samples=90):
     gray = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2GRAY)
 
     face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(50, 50))
 
     if len(faces) == 0:
         st.warning("⚠️ No face detected. Try again.")
         return
 
-    (x, y, w, h) = faces[0]  # Only the first detected face
-    face_crop = gray[y:y + h, x:x + w]
+    # Take the **largest face** detected (usually the main user)
+    (x, y, w, h) = max(faces, key=lambda rect: rect[2]*rect[3])
 
     for i in range(num_samples):
-        # Apply random shifts and augmentations for diversity
+        # Apply small random shifts
         dx, dy = random.randint(-4, 4), random.randint(-4, 4)
-        cropped = gray[max(0, y+dy):y+h, max(0, x+dx):x+w]
+        x1, y1 = max(0, x+dx), max(0, y+dy)
+        x2, y2 = min(gray.shape[1], x+w+dx), min(gray.shape[0], y+h+dy)
+        cropped = gray[y1:y2, x1:x2]
         resized = cv2.resize(cropped, (200, 200))
 
         filename = f"dataset/user.{Id}.{i+1}.jpg"
         cv2.imwrite(filename, resized)
 
     st.success(f"✅ Saved {num_samples} face samples for ID {Id}!")
-
 
 # ---------- STREAMLIT APP ----------
 st.title("📸 Face Registration System")
@@ -91,3 +92,4 @@ if Name and MatricNo:
             save_face_samples(Id, img_file, num_samples=90)
 else:
     st.warning("Please fill all fields before capturing your face.")
+
