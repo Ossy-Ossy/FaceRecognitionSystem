@@ -1,6 +1,8 @@
+import streamlit as st
 import cv2
 import sqlite3
-import os
+import numpy as np
+from PIL import Image
 
 # -------------------- CONFIG --------------------
 CASCADE_PATH = "haarcascade_frontalface_default.xml"
@@ -9,22 +11,15 @@ CONFIDENCE_THRESHOLD = 80  # Lower is stricter
 
 # -------------------- INITIALIZE --------------------
 facedetect = cv2.CascadeClassifier(CASCADE_PATH)
-
-cam = cv2.VideoCapture(0)
-if not cam.isOpened():
-    print("❌ Error: Camera not accessible.")
-    exit()
-
-# Load trained recognizer
 recognizer = cv2.face.LBPHFaceRecognizer_create()
 recognizer.read(RECOGNIZER_PATH)
 
+st.title("🎯 Real-time Face Recognition")
+st.write("Click below to capture your face and verify your identity.")
+
 # -------------------- DATABASE FUNCTION --------------------
 def get_profile(student_id):
-    """
-    Fetch student info from the database by ID.
-    Returns a tuple: (Id, Name, Age, MatricNo) or None
-    """
+    """Fetch student info from database by ID."""
     conn = sqlite3.connect('database.db')
     cursor = conn.execute("SELECT * FROM STUDENTS WHERE Id = ?", (student_id,))
     profile = None
@@ -33,56 +28,50 @@ def get_profile(student_id):
     conn.close()
     return profile
 
-# -------------------- MAIN LOOP --------------------
-print("\n🎥 Starting face recognition... Press 'q' to quit.\n")
+# -------------------- CAMERA INPUT --------------------
+uploaded_image = st.camera_input("📸 Capture your face for recognition")
 
-while True:
-    ret, img = cam.read()
-    if not ret:
-        print("❌ Failed to capture frame.")
-        break
+if uploaded_image is not None:
+    # Convert uploaded image to OpenCV format
+    image = np.array(Image.open(uploaded_image))
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Detect faces
     faces = facedetect.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(50, 50))
 
-    for (x, y, w, h) in faces:
-        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    recognized = False
 
-        # Recognize face
+    for (x, y, w, h) in faces:
+        cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        # Recognize the face
         id, conf = recognizer.predict(gray[y:y + h, x:x + w])
 
         if conf < CONFIDENCE_THRESHOLD:
             profile = get_profile(id)
             if profile:
-                # Display info on camera window
+                recognized = True
                 start_y = y + h + 25
-                cv2.putText(img, f"Name: {profile[1]}", (x, start_y),
+                cv2.putText(image, f"Name: {profile[1]}", (x, start_y),
                             cv2.FONT_HERSHEY_COMPLEX, 0.8, (0, 255, 127), 2)
-                cv2.putText(img, f"Age: {profile[2]}", (x, start_y + 25),
+                cv2.putText(image, f"Age: {profile[2]}", (x, start_y + 25),
                             cv2.FONT_HERSHEY_COMPLEX, 0.8, (0, 255, 127), 2)
-                cv2.putText(img, f"RegNo: {profile[3]}", (x, start_y + 50),
+                cv2.putText(image, f"RegNo: {profile[3]}", (x, start_y + 50),
                             cv2.FONT_HERSHEY_COMPLEX, 0.8, (0, 255, 127), 2)
 
-                # Print info to terminal every time
-                print(f"✅ Recognized: ID={profile[0]}, Name={profile[1]}, Age={profile[2]}, RegNo={profile[3]}, Conf={conf:.2f}")
+                st.success(f"✅ Recognized: {profile[1]} (Age: {profile[2]}, RegNo: {profile[3]}) — Confidence: {conf:.2f}")
 
             else:
-                cv2.putText(img, "No Record Found", (x, y + h + 25),
+                cv2.putText(image, "No Record Found", (x, y + h + 25),
                             cv2.FONT_HERSHEY_COMPLEX, 0.8, (0, 165, 255), 2)
-                print(f"⚠️ ID={id} recognized but no record found in database. Conf={conf:.2f}")
-
+                st.warning(f"⚠️ ID={id} recognized but no record found in database.")
         else:
-            cv2.putText(img, "Unknown", (x, y + h + 25),
+            cv2.putText(image, "Unknown", (x, y + h + 25),
                         cv2.FONT_HERSHEY_COMPLEX, 0.8, (0, 0, 255), 2)
-            print(f"🚫 Unknown face detected. Conf={conf:.2f}")
+            st.error(f"🚫 Unknown face detected. Confidence={conf:.2f}")
 
-    cv2.imshow("FACE RECOGNITION", img)
+    if not recognized and len(faces) == 0:
+        st.warning("😕 No face detected. Try again.")
 
-    # Quit on pressing 'q'
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-# -------------------- CLEAN UP --------------------
-cam.release()
-cv2.destroyAllWindows()
-print("\n🛑 Recognition stopped.")
+    # Display final image with overlays
+    st.image(Image.fromarray(image), caption="Recognition Result", use_column_width=True)
