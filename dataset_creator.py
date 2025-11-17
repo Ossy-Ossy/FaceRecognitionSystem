@@ -1,7 +1,11 @@
+ 
 import streamlit as st
 import cv2
+import numpy as np
 import os
 import sqlite3
+from PIL import Image
+import random
 
 # ---------- DATABASE ----------
 def create_table():
@@ -9,7 +13,7 @@ def create_table():
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS STUDENTS (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            Id INTEGER PRIMARY KEY,
             Name TEXT NOT NULL,
             Age INTEGER NOT NULL,
             MatricNo TEXT NOT NULL
@@ -18,72 +22,75 @@ def create_table():
     conn.commit()
     conn.close()
 
-def insert_data(name, age, matric):
+
+def insert_or_update(Id, Name, Age, MatricNo):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO STUDENTS (Name, Age, MatricNo) VALUES (?, ?, ?)",
-                   (name, age, matric))
+    cursor.execute("SELECT * FROM STUDENTS WHERE Id=?", (Id,))
+    data = cursor.fetchone()
+
+    if data:
+        cursor.execute("UPDATE STUDENTS SET Name=?, Age=?, MatricNo=? WHERE Id=?",
+                       (Name, Age, MatricNo, Id))
+        st.info(f"🔁 Updated record for ID {Id}")
+    else:
+        cursor.execute("INSERT INTO STUDENTS (Id, Name, Age, MatricNo) VALUES (?, ?, ?, ?)",
+                       (Id, Name, Age, MatricNo))
+        st.success(f"✅ New record created for ID {Id}")
+
     conn.commit()
-    last_id = cursor.lastrowid
     conn.close()
-    return last_id
+
 
 # ---------- FACE CAPTURE ----------
-def capture_faces(user_id):
-    st.write("📸 Capture 50 face samples. Click the camera button repeatedly.")
+def save_face_samples(Id, img_file, num_samples=90):
+    os.makedirs("dataset", exist_ok=True)
+    image = Image.open(img_file)
+    gray = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2GRAY)
 
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(50, 50))
 
-    dataset_dir = "dataset"
-    os.makedirs(dataset_dir, exist_ok=True)
+    if len(faces) == 0:
+        st.warning("⚠️ No face detected. Try again.")
+        return
 
-    count = 0
+    # Take the **largest face** detected (usually the main user)
+    (x, y, w, h) = max(faces, key=lambda rect: rect[2]*rect[3])
 
-    while count < 50:
-        img = st.camera_input(f"Image {count+1}/50")
+    for i in range(num_samples):
+        # Apply small random shifts
+        dx, dy = random.randint(-4, 4), random.randint(-4, 4)
+        x1, y1 = max(0, x+dx), max(0, y+dy)
+        x2, y2 = min(gray.shape[1], x+w+dx), min(gray.shape[0], y+h+dy)
+        cropped = gray[y1:y2, x1:x2]
+        resized = cv2.resize(cropped, (200, 200))
 
-        if img is None:
-            st.warning("Waiting for camera input...")
-            st.stop()
+        filename = f"dataset/user.{Id}.{i+1}.jpg"
+        cv2.imwrite(filename, resized)
 
-        # Convert image
-        image = np.array(Image.open(img))
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    st.success(f"✅ Saved {num_samples} face samples for ID {Id}!")
 
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-
-        if len(faces) == 0:
-            st.error("❌ No face detected. Try again.")
-            continue
-
-        # Only use largest face
-        (x, y, w, h) = max(faces, key=lambda a: a[2] * a[3])
-        face_img = gray[y:y+h, x:x+w]
-
-        # Save sample
-        cv2.imwrite(f"dataset/User.{user_id}.{count+1}.jpg", face_img)
-        count += 1
-
-        st.success(f"Saved sample {count}/50")
-
-    st.success("✔ All 50 face samples captured!")
-
-
-# ---------- STREAMLIT ----------
-st.title("📝 Register User & Capture Face")
+# ---------- STREAMLIT APP ----------
+st.title("📸 Face Registration System")
+st.write("Capture and register your face directly from your browser (90 samples per user).")
 
 create_table()
 
-name = st.text_input("Full Name")
-age = st.number_input("Age", min_value=1, max_value=100)
-matric = st.text_input("Matric Number (e.g., 2021/123456)")
+Id = st.number_input("Enter User ID", min_value=1, step=1)
+Name = st.text_input("Enter Name")
+Age = st.number_input("Enter Age", min_value=1, step=1)
+MatricNo = st.text_input("Enter Matriculation Number (e.g. 2021/246553)")
 
-if st.button("Register & Capture Face"):
-    if name and age and matric:
-        user_id = insert_data(name, age, matric)
-        st.success(f"User Registered! Assigned ID = {user_id}")
-        capture_faces(user_id)
-    else:
-        st.error("Fill all the fields first!")
+if Name and MatricNo:
+    insert_or_update(Id, Name, Age, MatricNo)
+    st.info("Click below to take a photo and generate 90 face samples.")
 
+    img_file = st.camera_input("📷 Capture your face")
+
+    if img_file is not None:
+        with st.spinner("Processing and saving 90 samples..."):
+            save_face_samples(Id, img_file, num_samples=90)
+else:
+    st.warning("Please fill all fields before capturing your face.")
 
