@@ -30,41 +30,44 @@ def insert_data(name, age, matric):
 
 # ---------- FACE CAPTURE ----------
 def capture_faces(user_id):
-    cam = cv2.VideoCapture(0)
+    st.write("📸 Capture 50 face samples. Click the camera button repeatedly.")
+
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
     dataset_dir = "dataset"
-    if not os.path.exists(dataset_dir):
-        os.makedirs(dataset_dir)
+    os.makedirs(dataset_dir, exist_ok=True)
 
     count = 0
-    st.write("📸 Capturing 50 face images... Look at your camera.")
-
-    # Streamlit image placeholder
-    placeholder = st.empty()
 
     while count < 50:
-        ret, frame = cam.read()
-        if not ret:
-            st.error("Camera error!")
-            break
+        img = st.camera_input(f"Image {count+1}/50")
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if img is None:
+            st.warning("Waiting for camera input...")
+            st.stop()
+
+        # Convert image
+        image = np.array(Image.open(img))
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
         faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-        for (x, y, w, h) in faces:
-            count += 1
-            face_img = gray[y:y+h, x:x+w]
-            cv2.imwrite(f"dataset/User.{user_id}.{count}.jpg", face_img)
+        if len(faces) == 0:
+            st.error("❌ No face detected. Try again.")
+            continue
 
-            # Draw on frame for preview
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+        # Only use largest face
+        (x, y, w, h) = max(faces, key=lambda a: a[2] * a[3])
+        face_img = gray[y:y+h, x:x+w]
 
-        # Show in browser instead of cv2.imshow
-        placeholder.image(frame, channels="BGR", caption=f"Capturing Image {count}/50")
+        # Save sample
+        cv2.imwrite(f"dataset/User.{user_id}.{count+1}.jpg", face_img)
+        count += 1
 
-    cam.release()
-    st.success("✔ Face capture completed!")
+        st.success(f"Saved sample {count}/50")
+
+    st.success("✔ All 50 face samples captured!")
+
 
 # ---------- STREAMLIT ----------
 st.title("📝 Register User & Capture Face")
@@ -82,4 +85,5 @@ if st.button("Register & Capture Face"):
         capture_faces(user_id)
     else:
         st.error("Fill all the fields first!")
+
 
