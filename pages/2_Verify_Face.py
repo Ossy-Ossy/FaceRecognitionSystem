@@ -8,9 +8,9 @@ from PIL import Image
 CASCADE_PATH = "haarcascade_frontalface_default.xml"
 RECOGNIZER_PATH = "recognizer/trainingdata.yml"
 
-# CRITICAL FIX: Lower threshold for LBPH (lower = stricter)
-# Typical good match: 30-50, Acceptable: 50-70, Poor: 70+
-CONFIDENCE_THRESHOLD = 50  # Adjust this: 40-60 is recommended
+# BALANCED threshold for LBPH (lower = stricter)
+# Good match: 20-50, Acceptable: 50-75, Reject: 75+
+CONFIDENCE_THRESHOLD = 75  # Balanced for stability
 
 # -------------------- INITIALIZE --------------------
 facedetect = cv2.CascadeClassifier(CASCADE_PATH)
@@ -50,8 +50,13 @@ if uploaded_image is not None:
         for (x, y, w, h) in faces:
             cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
             
+            # Extract and preprocess face (match training preprocessing)
+            face_roi = gray[y:y + h, x:x + w]
+            face_roi = cv2.equalizeHist(face_roi)  # Apply histogram equalization
+            face_roi = cv2.resize(face_roi, (200, 200))  # Resize to training size
+            
             # Recognize the face
-            id, conf = recognizer.predict(gray[y:y + h, x:x + w])
+            id, conf = recognizer.predict(face_roi)
             
             # CRITICAL FIX: For LBPH, LOWER confidence = BETTER match
             # Reject if confidence is too HIGH (meaning poor match)
