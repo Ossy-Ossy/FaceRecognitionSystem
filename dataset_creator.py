@@ -38,12 +38,15 @@ def capture_faces(user_id):
         os.makedirs(dataset_dir)
 
     count = 0
-    st.write("📸 Capturing 50 face images... Please look at the camera.")
+    st.write("📸 Capturing 50 face images... Look at your camera.")
 
-    while True:
+    # Streamlit image placeholder
+    placeholder = st.empty()
+
+    while count < 50:
         ret, frame = cam.read()
         if not ret:
-            st.write("Camera not found!")
+            st.error("Camera error!")
             break
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -54,15 +57,13 @@ def capture_faces(user_id):
             face_img = gray[y:y+h, x:x+w]
             cv2.imwrite(f"dataset/User.{user_id}.{count}.jpg", face_img)
 
+            # Draw on frame for preview
             cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
-        cv2.imshow("Capturing Faces", frame)
-
-        if cv2.waitKey(1) == 27 or count == 50:
-            break
+        # Show in browser instead of cv2.imshow
+        placeholder.image(frame, channels="BGR", caption=f"Capturing Image {count}/50")
 
     cam.release()
-    cv2.destroyAllWindows()
     st.success("✔ Face capture completed!")
 
 # ---------- STREAMLIT ----------
@@ -81,3 +82,4 @@ if st.button("Register & Capture Face"):
         capture_faces(user_id)
     else:
         st.error("Fill all the fields first!")
+
