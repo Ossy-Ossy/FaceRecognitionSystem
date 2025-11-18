@@ -10,7 +10,7 @@ RECOGNIZER_PATH = "recognizer/trainingdata.yml"
 
 # BALANCED threshold for LBPH (lower = stricter)
 # Good match: 20-50, Acceptable: 50-75, Reject: 75+
-CONFIDENCE_THRESHOLD = 75  # Balanced for stability
+CONFIDENCE_THRESHOLD = 40  # Balanced for stability
 
 # -------------------- INITIALIZE --------------------
 facedetect = cv2.CascadeClassifier(CASCADE_PATH)
@@ -98,3 +98,4 @@ if uploaded_image is not None:
         st.write("**Adjust threshold if:**")
         st.write("- Too many false rejections → increase threshold (e.g., 60-70)")
         st.write("- Too many false acceptances → decrease threshold (e.g., 40-45)")
+
